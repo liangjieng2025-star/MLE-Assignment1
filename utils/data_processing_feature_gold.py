@@ -15,9 +15,7 @@ def process_gold_features(snapshot_date_str, silver_features_directory, gold_fea
     df = spark.read.parquet(filepath)
     print('loaded from:', filepath, 'row count:', df.count())
 
-    # ---------------------------------------------------------
-    # 1. LAB 3 TARGET ENGINEERING (The Default Label)
-    # ---------------------------------------------------------
+    # Label engineering
     # Filter down to the specific Month on Book (mob) we want to predict
     df = df.filter(col("mob") == mob_target)
 
@@ -28,28 +26,21 @@ def process_gold_features(snapshot_date_str, silver_features_directory, gold_fea
     label_def_str = f"{dpd_threshold}dpd_{mob_target}mob"
     df = df.withColumn("label_def", F.lit(label_def_str).cast(StringType()))
 
-    # ---------------------------------------------------------
-    # 2. ML FEATURE CLEANUP & LEAKAGE PREVENTION
-    # ---------------------------------------------------------
-    # Drop PII and raw strings that machine learning models cannot process
+    # Data Leakage Check
+    # Drop PII and raw strings
     columns_to_drop = ["Name", "SSN"]
     for c in columns_to_drop:
         if c in df.columns:
             df = df.drop(c)
-
-    # CRITICAL: Drop intermediate calculation columns to prevent target data leakage!
-    # If the model sees 'overdue_amt' or 'dpd', it will cheat to predict the label.
+   
     leakage_cols = ["installments_missed", "first_missed_date", "dpd", "overdue_amt", "due_amt"]
     for c in leakage_cols:
         if c in df.columns:
             df = df.drop(c)
 
-    # Fill remaining nulls so the Random Forest doesn't crash
+    # Fill remaining nulls
     df = df.fillna(0)
 
-    # ---------------------------------------------------------
-    # 3. SAVE AND EXPORT
-    # ---------------------------------------------------------
     # Dynamically name the file based on the target (e.g., gold_feature_store_2023_01_01_90dpd_12mob.parquet)
     out_partition = "gold_feature_store_" + snapshot_date_str.replace('-','_') + f"_{label_def_str}.parquet"
     out_filepath = gold_feature_store_directory + out_partition

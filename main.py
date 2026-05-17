@@ -11,7 +11,6 @@ import pyspark
 import pyspark.sql.functions as F
 
 from pyspark.sql.functions import col
-# Removed FloatType to enforce strict DoubleType architecture
 from pyspark.sql.types import StringType, IntegerType, DoubleType, DateType
 
 import utils.data_processing_feature_bronze
@@ -25,7 +24,6 @@ spark = pyspark.sql.SparkSession.builder \
     .master("local[*]") \
     .getOrCreate()
 
-# Set log level to ERROR to hide warnings
 spark.sparkContext.setLogLevel("ERROR")
 
 # set up config
@@ -48,9 +46,7 @@ def generate_first_of_month_dates(start_date_str, end_date_str):
 dates_str_lst = generate_first_of_month_dates(start_date_str, end_date_str)
 print("Dates to process:", dates_str_lst)
 
-# ---------------------------------------------------------
-# 1. BRONZE LAYER
-# ---------------------------------------------------------
+# Bronze Layer
 bronze_features_directory = "datamart/bronze/features/"
 if not os.path.exists(bronze_features_directory):
     os.makedirs(bronze_features_directory)
@@ -60,9 +56,7 @@ for date_str in dates_str_lst:
     utils.data_processing_feature_bronze.process_bronze_features(date_str, bronze_features_directory, spark)
 
 
-# ---------------------------------------------------------
-# 2. SILVER LAYER
-# ---------------------------------------------------------
+# Silver Layer
 silver_features_directory = "datamart/silver/features/"
 if not os.path.exists(silver_features_directory):
     os.makedirs(silver_features_directory)
@@ -72,20 +66,17 @@ for date_str in dates_str_lst:
     utils.data_processing_feature_silver.process_silver_features(date_str, bronze_features_directory, silver_features_directory, spark)
 
 
-# ---------------------------------------------------------
-# 3. GOLD LAYER
-# ---------------------------------------------------------
+# Gold Layer
 gold_feature_store_directory = "datamart/gold/feature_store/"
 if not os.path.exists(gold_feature_store_directory):
     os.makedirs(gold_feature_store_directory)
 
 print("\n=== Running Gold Layer Backfill (Credit Risk Default Model) ===")
-# Define our strict Default parameters for the Lab 3 objective
+# Define DPD and MOB
 TARGET_DPD = 90
 TARGET_MOB = 3
 
 for date_str in dates_str_lst:
-    # Explicitly pass the dpd_threshold and mob_target to calculate the Label
     utils.data_processing_feature_gold.process_gold_features(
         snapshot_date_str=date_str, 
         silver_features_directory=silver_features_directory, 
@@ -95,4 +86,4 @@ for date_str in dates_str_lst:
         mob_target=TARGET_MOB
     )
     
-print("\n✅ Full ETL Pipeline Execution Complete!")
+    print("Data pipeline completed")
