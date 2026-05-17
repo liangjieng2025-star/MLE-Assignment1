@@ -12,7 +12,8 @@ import pyspark.sql.functions as F
 import argparse
 
 from pyspark.sql.functions import col
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
+# Swapped FloatType for DoubleType to prevent financial rounding errors downstream
+from pyspark.sql.types import StringType, IntegerType, DoubleType, DateType
 
 
 def process_bronze_features(snapshot_date_str, bronze_features_directory, spark):
@@ -23,7 +24,8 @@ def process_bronze_features(snapshot_date_str, bronze_features_directory, spark)
     feature_files = {
         "attributes": "data/features_attributes.csv",
         "clickstream": "data/feature_clickstream.csv",
-        "financials": "data/features_financials.csv"
+        "financials": "data/features_financials.csv",
+        "lms_loan_daily": "data/lms_loan_daily.csv"  # <-- ADDED 4TH FILE HERE
     }
 
     # load data - IRL ingest from back end source system

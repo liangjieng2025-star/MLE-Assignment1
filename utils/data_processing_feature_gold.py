@@ -1,21 +1,11 @@
 import os
-import glob
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import random
-from datetime import datetime, timedelta
-from dateutil.relativedelta import relativedelta
-import pprint
 import pyspark
 import pyspark.sql.functions as F
-import argparse
-
 from pyspark.sql.functions import col
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
+from pyspark.sql.types import StringType, IntegerType, DoubleType, DateType
+from datetime import datetime
 
-
-def process_gold_features(snapshot_date_str, silver_features_directory, gold_feature_store_directory, spark):
+def process_gold_features(snapshot_date_str, silver_features_directory, gold_feature_store_directory, spark, dpd_threshold=90, mob_target=12):
     # prepare arguments
     snapshot_date = datetime.strptime(snapshot_date_str, "%Y-%m-%d")
     
@@ -25,21 +15,46 @@ def process_gold_features(snapshot_date_str, silver_features_directory, gold_fea
     df = spark.read.parquet(filepath)
     print('loaded from:', filepath, 'row count:', df.count())
 
-    # clean up for ML compatibility 
-    # dropping columns that cannot be used by the model easily (like raw strings/names)
+    # ---------------------------------------------------------
+    # 1. LAB 3 TARGET ENGINEERING (The Default Label)
+    # ---------------------------------------------------------
+    # Filter down to the specific Month on Book (mob) we want to predict
+    df = df.filter(col("mob") == mob_target)
+
+    # Create the binary target label based on the Days Past Due (dpd) threshold
+    df = df.withColumn("label", F.when(col("dpd") >= dpd_threshold, 1).otherwise(0).cast(IntegerType()))
+    
+    # Add metadata so we know exactly what this target represents
+    label_def_str = f"{dpd_threshold}dpd_{mob_target}mob"
+    df = df.withColumn("label_def", F.lit(label_def_str).cast(StringType()))
+
+    # ---------------------------------------------------------
+    # 2. ML FEATURE CLEANUP & LEAKAGE PREVENTION
+    # ---------------------------------------------------------
+    # Drop PII and raw strings that machine learning models cannot process
     columns_to_drop = ["Name", "SSN"]
     for c in columns_to_drop:
         if c in df.columns:
             df = df.drop(c)
 
-    # fill nulls so the model doesn't crash later
+    # CRITICAL: Drop intermediate calculation columns to prevent target data leakage!
+    # If the model sees 'overdue_amt' or 'dpd', it will cheat to predict the label.
+    leakage_cols = ["installments_missed", "first_missed_date", "dpd", "overdue_amt", "due_amt"]
+    for c in leakage_cols:
+        if c in df.columns:
+            df = df.drop(c)
+
+    # Fill remaining nulls so the Random Forest doesn't crash
     df = df.fillna(0)
 
-    # save gold table - IRL connect to database to write
-    out_partition = "gold_feature_store_" + snapshot_date_str.replace('-','_') + '.parquet'
+    # ---------------------------------------------------------
+    # 3. SAVE AND EXPORT
+    # ---------------------------------------------------------
+    # Dynamically name the file based on the target (e.g., gold_feature_store_2023_01_01_90dpd_12mob.parquet)
+    out_partition = "gold_feature_store_" + snapshot_date_str.replace('-','_') + f"_{label_def_str}.parquet"
     out_filepath = gold_feature_store_directory + out_partition
     
     df.write.mode("overwrite").parquet(out_filepath)
-    print('saved to:', out_filepath)
+    print('saved Gold feature store to:', out_filepath)
 
     return df

@@ -11,7 +11,8 @@ import pyspark
 import pyspark.sql.functions as F
 
 from pyspark.sql.functions import col
-from pyspark.sql.types import StringType, IntegerType, FloatType, DateType
+# Removed FloatType to enforce strict DoubleType architecture
+from pyspark.sql.types import StringType, IntegerType, DoubleType, DateType
 
 import utils.data_processing_feature_bronze
 import utils.data_processing_feature_silver
@@ -40,38 +41,58 @@ def generate_first_of_month_dates(start_date_str, end_date_str):
     current_date = start_date
     while current_date <= end_date:
         first_of_month_dates.append(current_date.strftime("%Y-%m-%d"))
-        # FIX: safely add exactly one month, automatically handling December rollovers
+        # safely add exactly one month, automatically handling December rollovers
         current_date += relativedelta(months=1)
     return first_of_month_dates
 
 dates_str_lst = generate_first_of_month_dates(start_date_str, end_date_str)
-print(dates_str_lst)
+print("Dates to process:", dates_str_lst)
 
-# create bronze datalake
+# ---------------------------------------------------------
+# 1. BRONZE LAYER
+# ---------------------------------------------------------
 bronze_features_directory = "datamart/bronze/features/"
 if not os.path.exists(bronze_features_directory):
     os.makedirs(bronze_features_directory)
 
-# run bronze backfill
+print("\n=== Running Bronze Layer Backfill ===")
 for date_str in dates_str_lst:
     utils.data_processing_feature_bronze.process_bronze_features(date_str, bronze_features_directory, spark)
 
 
-# create silver datalake
+# ---------------------------------------------------------
+# 2. SILVER LAYER
+# ---------------------------------------------------------
 silver_features_directory = "datamart/silver/features/"
 if not os.path.exists(silver_features_directory):
     os.makedirs(silver_features_directory)
 
-# run silver backfill
+print("\n=== Running Silver Layer Backfill ===")
 for date_str in dates_str_lst:
     utils.data_processing_feature_silver.process_silver_features(date_str, bronze_features_directory, silver_features_directory, spark)
 
 
-# create gold datalake
+# ---------------------------------------------------------
+# 3. GOLD LAYER
+# ---------------------------------------------------------
 gold_feature_store_directory = "datamart/gold/feature_store/"
 if not os.path.exists(gold_feature_store_directory):
     os.makedirs(gold_feature_store_directory)
 
-# run gold backfill
+print("\n=== Running Gold Layer Backfill (Credit Risk Default Model) ===")
+# Define our strict Default parameters for the Lab 3 objective
+TARGET_DPD = 90
+TARGET_MOB = 3
+
 for date_str in dates_str_lst:
-    utils.data_processing_feature_gold.process_gold_features(date_str, silver_features_directory, gold_feature_store_directory, spark)
+    # Explicitly pass the dpd_threshold and mob_target to calculate the Label
+    utils.data_processing_feature_gold.process_gold_features(
+        snapshot_date_str=date_str, 
+        silver_features_directory=silver_features_directory, 
+        gold_feature_store_directory=gold_feature_store_directory, 
+        spark=spark,
+        dpd_threshold=TARGET_DPD, 
+        mob_target=TARGET_MOB
+    )
+    
+print("\n✅ Full ETL Pipeline Execution Complete!")
