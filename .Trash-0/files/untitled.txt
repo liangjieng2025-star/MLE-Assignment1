@@ -1,3 +1,0 @@
-datamart/
-test_datamart/
-__pycache__/
